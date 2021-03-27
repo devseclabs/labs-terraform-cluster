@@ -1,0 +1,88 @@
+pipeline {
+    agent any
+    tools {
+        "org.jenkinsci.plugins.terraform.TerraformInstallation" "terraform"
+    }
+    parameters {
+        choice(choices: ['nv-dev', 'nv-qa'], description:'Workspace to use in Terraform', name: 'WORKSPACE')
+    }
+
+    environment {
+        TF_HOME = tool('terraform')
+        TF_INPUT = "0"
+        TF_IN_AUTOMATION = "TRUE"
+        TF_LOG = "WARN"
+        PATH = "$TF_HOME:$PATH"
+        GOOGLE_APPLICATION_CREDENTIALS = credentials('gcp-key')
+    }
+
+    stages {
+
+        stage('Init Infra'){
+            steps {
+                dir('iac/'){
+                    sh "terraform --version"
+                    sh "terraform init \
+                            -backend-config='bucket=tf-iac-deployments' \
+                            -backend-config='prefix=${params.WORKSPACE}/terraform.tfstate'"
+                }
+            }
+        }
+
+        stage('Validate Infra'){
+            steps {
+                dir('iac/'){
+                    sh 'terraform validate'
+                }
+            }
+        }
+
+        stage('Plan Infra'){
+            steps {
+                dir('iac/'){
+                    script {
+                        try {
+                           sh "terraform workspace new ${params.WORKSPACE}"
+                        } catch (err) {
+                            sh "terraform workspace select ${params.WORKSPACE}"
+                        }
+                        sh "terraform plan -var-file=${params.WORKSPACE}.tfvars -out terraform-${params.WORKSPACE}.tfplan;echo \$? > status"
+                        stash name: "terraform-applications-plan", includes: "terraform-${params.WORKSPACE}.tfplan"
+                    }
+                }
+            }
+        }
+
+        stage('Apply Infra'){
+            steps {
+                script{
+                    def apply = false
+                    try {
+                        input message: 'confirm apply', ok: 'Apply Config'
+                        apply = true
+                    } catch (err) {
+                        apply = false
+                        dir('iac/'){
+                            sh "terraform destroy -auto-approve"
+                            sh "terraform workspace select default"
+                            sh "terraform workspace delete ${params.WORKSPACE}"
+                        }
+                        currentBuild.result = 'UNSTABLE'
+                    }
+                    if(apply){
+                        dir('iac/'){
+                            unstash "terraform-applications-plan"
+                            sh "terraform apply terraform-${params.WORKSPACE}.tfplan"
+
+                        }
+                    }
+                }
+            }
+        }
+    }
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
