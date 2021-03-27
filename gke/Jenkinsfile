@@ -20,7 +20,7 @@ pipeline {
 
         stage('Init Infra'){
             steps {
-                dir('iac/'){
+                dir('gke/iac/'){
                     sh "terraform --version"
                     sh "terraform init \
                             -backend-config='bucket=tf-iac-deployments' \
@@ -31,7 +31,7 @@ pipeline {
 
         stage('Validate Infra'){
             steps {
-                dir('iac/'){
+                dir('gke/iac/'){
                     sh 'terraform validate'
                 }
             }
@@ -39,7 +39,7 @@ pipeline {
 
         stage('Plan Infra'){
             steps {
-                dir('iac/'){
+                dir('gke/iac/'){
                     script {
                         try {
                            sh "terraform workspace new ${params.WORKSPACE}"
@@ -62,7 +62,7 @@ pipeline {
                         apply = true
                     } catch (err) {
                         apply = false
-                        dir('iac/'){
+                        dir('gke/iac/'){
                             sh "terraform destroy -auto-approve"
                             sh "terraform workspace select default"
                             sh "terraform workspace delete ${params.WORKSPACE}"
@@ -70,7 +70,7 @@ pipeline {
                         currentBuild.result = 'UNSTABLE'
                     }
                     if(apply){
-                        dir('iac/'){
+                        dir('gke/iac/'){
                             unstash "terraform-applications-plan"
                             sh "terraform apply terraform-${params.WORKSPACE}.tfplan"
 
