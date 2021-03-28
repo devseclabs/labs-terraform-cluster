@@ -63,7 +63,7 @@ pipeline {
                     } catch (err) {
                         apply = false
                         dir('gke/iac/'){
-                            sh "terraform destroy -auto-approve"
+                            sh "terraform destroy -auto-approve -var-file=${params.WORKSPACE}.tfvars"
                             sh "terraform workspace select default"
                             sh "terraform workspace delete ${params.WORKSPACE}"
                         }
